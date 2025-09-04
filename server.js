@@ -760,6 +760,12 @@ app.get('/spotify', async (req, res) => {
     return res.status(400).json({ error: 'Invalid or missing Spotify track URL' });
   }
 
+  // ✅ Extract clean track ID (strip ?si= and other query params)
+  let trackId = spotifyLink.split('/track/')[1];
+  if (trackId.includes('?')) {
+    trackId = trackId.split('?')[0];
+  }
+
   let browser;
   try {
     browser = await puppeteer.launch({
@@ -795,23 +801,30 @@ app.get('/spotify', async (req, res) => {
     await page.type('#trackUrl', spotifyLink, { delay: 50 });
     await page.click('#btnSubmit');
 
-    // 🕒 Wait for Convert button (instead of spinner)
-    const trackId = spotifyLink.split('/track/')[1];
-    await page.waitForSelector(`button#${trackId}`, { visible: true });
+    // 🕒 Wait for Convert button (safer than using trackId directly)
+    await page.waitForSelector('button.btn.btn-success', { visible: true });
 
-    // Click Convert
-    await page.click(`button#${trackId}`);
+    // ✅ Click the Convert button by text match
+    await page.evaluate(() => {
+      const btns = [...document.querySelectorAll('button.btn.btn-success')];
+      const convertBtn = btns.find(b => b.innerText.trim().toLowerCase() === 'convert');
+      if (convertBtn) convertBtn.click();
+    });
 
-    // 🎯 Capture the /convert response
+    // 🎯 Capture the /convert response and resolve URL
     const downloadUrl = await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('Timeout waiting for convert response')), 60000);
+
       page.on('response', async (response) => {
         try {
           if (response.url().includes('/convert')) {
             const json = await response.json();
+            clearTimeout(timeout);
             if (json && json.url) resolve(json.url);
             else reject(new Error('No download URL in response'));
           }
         } catch (err) {
+          clearTimeout(timeout);
           reject(err);
         }
       });
