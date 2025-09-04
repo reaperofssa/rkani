@@ -676,6 +676,157 @@ app.get('/getDownload', async (req, res) => {
     }
 });
 
+const clientId = 'ae3ec3332d1b4500bbef0f6952ea6805';
+const clientSecret = 'dc03110d119d40bdab1f23461e004c31';
+
+async function getAccessToken() {
+  const authString = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+
+  try {
+    const response = await axios.post('https://accounts.spotify.com/api/token', 
+      'grant_type=client_credentials', 
+      {
+        headers: {
+          'Authorization': `Basic ${authString}`,
+          'Content-Type': 'application/x-www-form-urlencoded',
+        }
+      }
+    );
+    return response.data.access_token;
+  } catch (error) {
+    console.error('Failed to get access token:', error.response ? error.response.data : error.message);
+    throw error;
+  }
+}
+
+
+app.get('/search', async (req, res) => {
+  const query = req.query.q;
+  if (!query) {
+    return res.status(400).json({ error: 'Missing query parameter q' });
+  }
+
+  try {
+    const token = await getAccessToken();
+
+    const response = await axios.get('https://api.spotify.com/v1/search', {
+      params: {
+        q: query,
+        type: 'track',
+        limit: 1,
+        include_external: 'audio'
+      },
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+
+    const track = response.data.tracks.items[0];
+    if (!track) {
+      return res.status(404).json({ error: 'No tracks found' });
+    }
+
+    // Construct the JSON response
+    const result = {
+      title: track.name,
+      id: track.id,
+      artists: track.artists.map(a => a.name),
+      album: track.album.name,
+      duration_seconds: Math.floor(track.duration_ms / 1000),
+      popularity: track.popularity,
+      release_date: track.album.release_date,
+      spotify_url: track.external_urls.spotify,
+      preview_available: Boolean(track.preview_url),
+      explicit: track.explicit,
+      album_type: track.album.album_type,
+      total_tracks_in_album: track.album.total_tracks,
+      track_number: track.track_number,
+      isrc: track.external_ids.isrc,
+      available_markets_count: track.available_markets.length
+    };
+
+    res.json(result);
+
+  } catch (error) {
+    console.error('Error fetching track:', error.response ? error.response.data : error.message);
+    res.status(500).json({ error: 'Failed to fetch track' });
+  }
+});
+
+app.get('/spotify', async (req, res) => {
+  const spotifyLink = req.query.url;
+
+  if (!spotifyLink || !spotifyLink.includes('open.spotify.com/track/')) {
+    return res.status(400).json({ error: 'Invalid or missing Spotify track URL' });
+  }
+
+  let browser;
+  try {
+    browser = await puppeteer.launch({
+      headless: true,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-blink-features=AutomationControlled',
+      ],
+      defaultViewport: null,
+    });
+
+    const page = await browser.newPage();
+
+    // 🕵️ Spoof fingerprint
+    await page.setUserAgent(
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
+      '(KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36'
+    );
+    await page.setViewport({ width: 1366, height: 768 });
+    await page.evaluateOnNewDocument(() => {
+      Object.defineProperty(navigator, 'language', { get: () => 'en-US' });
+      Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+    });
+    await page.emulateTimezone('America/New_York');
+    await page.setGeolocation({ latitude: 40.7128, longitude: -74.0060 });
+    await page.setExtraHTTPHeaders({ 'Accept-Language': 'en-US,en;q=0.9' });
+
+    // 🌐 Go to site
+    await page.goto('https://spotmate.online/', { waitUntil: 'networkidle2' });
+
+    // 🎵 Type Spotify link and submit
+    await page.type('#trackUrl', spotifyLink, { delay: 50 });
+    await page.click('#btnSubmit');
+
+    // 🕒 Wait for Convert button (instead of spinner)
+    const trackId = spotifyLink.split('/track/')[1];
+    await page.waitForSelector(`button#${trackId}`, { visible: true });
+
+    // Click Convert
+    await page.click(`button#${trackId}`);
+
+    // 🎯 Capture the /convert response
+    const downloadUrl = await new Promise((resolve, reject) => {
+      page.on('response', async (response) => {
+        try {
+          if (response.url().includes('/convert')) {
+            const json = await response.json();
+            if (json && json.url) resolve(json.url);
+            else reject(new Error('No download URL in response'));
+          }
+        } catch (err) {
+          reject(err);
+        }
+      });
+    });
+
+    res.json({ success: true, downloadUrl });
+
+  } catch (err) {
+    console.error('❌ Error:', err);
+    res.status(500).json({ error: 'Failed to fetch download link', details: err.message });
+  } finally {
+    if (browser) await browser.close();
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`Server running at http://localhost:${PORT}`);
 });
