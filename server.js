@@ -295,12 +295,9 @@ app.get('/resolvex', async (req, res) => {
   }
 
   let browser;
-
   try {
-    // Delay helper
     const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-    // Fingerprint spoofing
     const spoofFingerprint = async (page) => {
       await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/114.0.0.0 Safari/537.36');
       await page.setViewport({ width: 1366, height: 768 });
@@ -312,7 +309,6 @@ app.get('/resolvex', async (req, res) => {
       });
     };
 
-    // Scrolling
     const randomScroll = async (page) => {
       await page.evaluate(() => {
         return new Promise(resolve => {
@@ -338,148 +334,99 @@ app.get('/resolvex', async (req, res) => {
     const page = await browser.newPage();
     await spoofFingerprint(page);
 
-    // Navigate to pahe.win URL
+    // Step 1: Navigate to pahe.win
     await page.goto(paheURL, { waitUntil: 'networkidle2' });
     await delay(2500);
     await randomScroll(page);
     await delay(1500);
 
-    // Extract kwik.si link
+    // Step 2: Extract kwik.si link
     const kwikLink = await page.$$eval('a.btn.btn-secondary.btn-block.redirect', links =>
       links.find(a => a.href.includes('kwik.si'))?.href
     );
-
     if (!kwikLink) throw new Error('kwik.si link not found on pahe.win');
-
-    const kwikId = kwikLink.split('/f/')[1];
-    if (!kwikId) throw new Error('Invalid kwik.si URL structure');
-
-    const kwikBunnyURL = `https://kwik.bunniescdn.online/f/${kwikId}`;
 
     let mp4Url = null;
     let mp4UrlFound = false;
 
-    // Enhanced request interception to capture redirects and MP4 links
+    // Step 3: Intercept requests & responses
     await page.setRequestInterception(true);
     page.on('request', request => {
       const url = request.url();
-      
-      // Capture MP4 URLs from various CDN sources
       if (url.endsWith('.mp4') && (
-        url.includes('cdn') || 
-        url.includes('vault') || 
-        url.includes('eu') || 
-        url.includes('bunny') || 
-        url.includes('nextcdn') ||
+        url.includes('cdn') || url.includes('vault') || url.includes('eu') ||
+        url.includes('bunny') || url.includes('nextcdn') ||
         url.match(/\.(mp4)(\?|$)/i)
       )) {
         mp4Url = url;
         mp4UrlFound = true;
         console.log('MP4 URL captured:', url);
       }
-      
       request.continue();
     });
 
-    // Enhanced response interception to catch redirects
     page.on('response', response => {
       const url = response.url();
       const status = response.status();
-      
-      // Track redirects (3xx status codes)
+
       if (status >= 300 && status < 400) {
         const location = response.headers()['location'];
-        if (location && location.endsWith('.mp4') && (
-          location.includes('cdn') || 
-          location.includes('vault') || 
-          location.includes('eu') || 
-          location.includes('bunny') || 
-          location.includes('nextcdn')
-        )) {
+        if (location && location.endsWith('.mp4')) {
           mp4Url = location;
           mp4UrlFound = true;
-          console.log('MP4 URL captured from redirect:', location);
+          console.log('MP4 URL from redirect:', location);
         }
       }
-      
-      // Check final response URLs
-      if (url.endsWith('.mp4') && (
-        url.includes('cdn') || 
-        url.includes('vault') || 
-        url.includes('eu') || 
-        url.includes('bunny') || 
-        url.includes('nextcdn')
-      )) {
+      if (url.endsWith('.mp4')) {
         mp4Url = url;
         mp4UrlFound = true;
-        console.log('MP4 URL captured from response:', url);
+        console.log('MP4 URL from response:', url);
       }
     });
 
-    // Navigate to kwik page and wait for automatic redirects
-    await page.goto(kwikBunnyURL, { waitUntil: 'networkidle2', timeout: 30000 }).catch(err => {
-      console.log('Navigation timeout or redirect occurred:', err.message);
-    });
-    await randomScroll(page);
-    await delay(4000);
+    // Step 4: Go to kwik.si and click the button
+    await page.goto(kwikLink, { waitUntil: 'networkidle2', timeout: 30000 });
+    await delay(2000);
 
-    // Check page content for MP4 links
-    try {
-      const pageContent = await page.content();
-      const mp4Match = pageContent.match(/(https?:\/\/[^\s"'<>]+\.mp4[^\s"'<>]*)/gi);
-      if (mp4Match && mp4Match.length > 0) {
-        mp4Url = mp4Match.find(match => 
-          match.includes('cdn') || 
-          match.includes('vault') || 
-          match.includes('eu') || 
-          match.includes('nextcdn')
-        );
-        if (mp4Url) {
-          mp4UrlFound = true;
-          console.log('MP4 URL found in page content:', mp4Url);
-        }
-      }
-    } catch (err) {
-      console.log('Error checking page content for MP4:', err.message);
-    }
+    const buttonSelector = 'button.button.is-uppercase.is-success.is-fullwidth';
+    await page.waitForSelector(buttonSelector, { timeout: 15000 });
+    await page.click(buttonSelector);
+    console.log('Clicked Kwik.si button');
 
-    // Extended wait for MP4 URLs
+    // Step 5: Extended sniffing & retries
     let waitTime = 0;
     const maxWaitTime = 30000;
-    
+
     while (!mp4UrlFound && waitTime < maxWaitTime) {
       await delay(1000);
       waitTime += 1000;
-      
+
       if (waitTime % 5000 === 0) {
         try {
           const currentUrl = page.url();
           console.log('Current page URL:', currentUrl);
-          
+
           if (currentUrl.endsWith('.mp4') && (
-            currentUrl.includes('cdn') || 
-            currentUrl.includes('vault') || 
-            currentUrl.includes('eu') || 
-            currentUrl.includes('nextcdn')
+            currentUrl.includes('cdn') || currentUrl.includes('vault') || 
+            currentUrl.includes('eu') || currentUrl.includes('nextcdn')
           )) {
             mp4Url = currentUrl;
             mp4UrlFound = true;
             console.log('Direct MP4 URL found:', currentUrl);
             break;
           }
-          
+
           const pageContent = await page.content();
           const mp4Match = pageContent.match(/(https?:\/\/[^\s"'<>]+\.mp4[^\s"'<>]*)/gi);
           if (mp4Match && mp4Match.length > 0) {
-            mp4Url = mp4Match.find(match => 
-              match.includes('cdn') || 
-              match.includes('vault') || 
-              match.includes('eu') || 
-              match.includes('nextcdn')
+            const found = mp4Match.find(match =>
+              match.includes('cdn') || match.includes('vault') ||
+              match.includes('eu') || match.includes('nextcdn')
             );
-            if (mp4Url) {
+            if (found) {
+              mp4Url = found;
               mp4UrlFound = true;
-              console.log('MP4 URL found in page content (retry):', mp4Url);
+              console.log('MP4 URL from page content:', mp4Url);
               break;
             }
           }
@@ -489,24 +436,12 @@ app.get('/resolvex', async (req, res) => {
       }
     }
 
-    // Validate MP4 URL format
-    if (mp4Url && !mp4Url.match(/https?:\/\/[^\s"'<>]+\.mp4(\?|$)/i)) {
-      console.log('Invalid MP4 URL format:', mp4Url);
-      mp4Url = null;
-      mp4UrlFound = false;
-    }
+    if (!mp4UrlFound || !mp4Url) throw new Error('Failed to find a valid MP4 URL');
 
-    const response = { 
-      kwikLink,
-      mp4Link: mp4UrlFound && mp4Url ? mp4Url : undefined
-    };
-    
-    if (!mp4UrlFound || !mp4Url) {
-      throw new Error('Failed to find a valid MP4 URL');
-    }
-
+    const response = { kwikLink, mp4Link: mp4Url };
     await browser.close();
     return res.status(200).json(response);
+
   } catch (err) {
     if (browser) await browser.close();
     console.error('Error in resolvex:', err.message);
