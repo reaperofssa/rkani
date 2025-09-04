@@ -543,6 +543,139 @@ app.get('/resolvex', async (req, res) => {
   }
 });
 
+app.get('/getDownload', async (req, res) => {
+    const { moviename, episode } = req.query;
+    if (!moviename) {
+        return res.status(400).json({ error: "moviename query parameter is required" });
+    }
+
+    const searchQuery = moviename.trim();
+    const episodeFilter = episode ? episode.trim() : null;
+    const searchUrl = `https://nkiri.com/?s=${encodeURIComponent(searchQuery)}`;
+
+    console.log("\n🔍 Searching for:", searchQuery);
+
+    let browser;
+    try {
+        browser = await puppeteer.launch({
+            headless: true,
+            args: ["--no-sandbox", "--disable-setuid-sandbox", "--ignore-certificate-errors"]
+        });
+
+        const page = await browser.newPage();
+        await page.goto(searchUrl, { waitUntil: "networkidle2" });
+
+        // Extract first movie link
+        await page.waitForSelector("article.post a, h2.entry-title a", { timeout: 10000 });
+        const firstMovieLink = await page.evaluate(() => {
+            const el = document.querySelector("article.post a, h2.entry-title a");
+            return el ? el.href : null;
+        });
+
+        if (!firstMovieLink) {
+            await browser.close();
+            return res.status(404).json({ error: "No movie found" });
+        }
+
+        console.log("\n✅ First Movie Page Found:", firstMovieLink);
+
+        // ===========================
+        // 2️⃣ GET DOWNLOAD LINKS FROM MOVIE PAGE
+        // ===========================
+        await page.goto(firstMovieLink, { waitUntil: "networkidle2" });
+        const moviePageHtml = await page.content();
+        const $movie = cheerio.load(moviePageHtml);
+
+        let downloadLinks = [];
+        const videoExtensions = [".mkv", ".mp4", ".mov", ".avi"];
+
+        $movie("a").each((i, el) => {
+            const link = $movie(el).attr("href");
+            if (
+                link &&
+                (link.includes("downloadwella.com") ||
+                    link.includes("wetafiles.com") ||
+                    videoExtensions.some(ext => link.endsWith(ext)))
+            ) {
+                downloadLinks.push(link);
+            }
+        });
+
+        if (downloadLinks.length === 0) {
+            await browser.close();
+            return res.status(404).json({ error: "No valid download links found" });
+        }
+
+        let selectedLink = downloadLinks[0];
+        if (downloadLinks.length > 1 && episodeFilter) {
+            const filteredLinks = downloadLinks.filter(link =>
+                link.includes(`E${episodeFilter}`) || link.includes(`e${episodeFilter}`)
+            );
+            if (filteredLinks.length > 0) {
+                selectedLink = filteredLinks[0];
+            }
+        }
+
+        console.log("\n✅ Selected Download Link:", selectedLink);
+
+        // Extract movie name from filename
+        const filename = selectedLink.split("/").pop();
+        const movieTitle = filename
+            .replace(/\.(mkv|mp4|mov|avi).*$/, "")
+            .replace(/[\.\-_\(\)]/g, " ")
+            .trim();
+
+        // ===========================
+        // 3️⃣ HANDLE FINAL DOWNLOAD LINK (STILL PUPPETEER)
+        // ===========================
+        if (videoExtensions.some(ext => selectedLink.endsWith(ext))) {
+            await browser.close();
+            return res.json({
+                movie: movieTitle,
+                finalDownloadUrl: selectedLink
+            });
+        }
+
+        // Open intermediate page
+        await page.goto(selectedLink, { waitUntil: "networkidle2" });
+
+        // Wait for "Create Download Link" button
+        await page.waitForSelector("#downloadbtn", { timeout: 15000 });
+        console.log("\n✅ Download button found, clicking...");
+
+        let finalDownloadUrl = null;
+        page.on("response", async (response) => {
+            const requestUrl = response.url();
+            if (requestUrl.includes("/d/") && videoExtensions.some(ext => requestUrl.endsWith(ext))) {
+                finalDownloadUrl = requestUrl;
+                console.log("\n✅ FINAL DOWNLOAD LINK:", finalDownloadUrl);
+            }
+        });
+
+        // Click the button
+        await page.evaluate(() => document.querySelector("#downloadbtn").click());
+
+        // Give time for redirects
+        await new Promise(resolve => setTimeout(resolve, 10000));
+
+        await browser.close();
+
+        if (!finalDownloadUrl) {
+            return res.status(404).json({ error: "Failed to extract final download link" });
+        }
+
+        res.json({
+            movie: movieTitle,
+            finalDownloadUrl
+        });
+
+    } catch (error) {
+        console.error("\n❌ Error:", error.message);
+        if (browser) await browser.close();
+        res.status(500).json({ error: "Internal server error" });
+    }
+});
+
 app.listen(PORT, () => {
   console.log(`Server running at http://localhost:${PORT}`);
 });
