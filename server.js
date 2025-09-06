@@ -755,90 +755,230 @@ app.get('/song', async (req, res) => {
 });
 
 app.get('/spotify', async (req, res) => {
-  const spotifyLink = req.query.url;
+    const spotifyUrl = req.query.url;
 
-  if (!spotifyLink || !spotifyLink.includes('open.spotify.com/track/')) {
-    return res.status(400).json({ error: 'Invalid or missing Spotify track URL' });
-  }
+    if (!spotifyUrl) {
+        return res.status(400).json({ error: "Missing 'url' query parameter" });
+    }
 
-  // ✅ Extract clean track ID (strip ?si= and other query params)
-  let trackId = spotifyLink.split('/track/')[1];
-  if (trackId.includes('?')) {
-    trackId = trackId.split('?')[0];
-  }
+    let browser;
+    let downloadUrl = null;
 
-  let browser;
-  try {
-    browser = await puppeteer.launch({
-      headless: true,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-blink-features=AutomationControlled',
-      ],
-      defaultViewport: null,
-    });
+    try {
+        browser = await puppeteer.launch({
+            headless: true,
+            defaultViewport: null,
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-blink-features=AutomationControlled'
+            ]
+        });
 
-    const page = await browser.newPage();
+        const page = await browser.newPage();
 
-    // 🕵️ Spoof fingerprint
-    await page.setUserAgent(
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
-      '(KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36'
-    );
-    await page.setViewport({ width: 1366, height: 768 });
-    await page.evaluateOnNewDocument(() => {
-      Object.defineProperty(navigator, 'language', { get: () => 'en-US' });
-      Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
-    });
-    await page.emulateTimezone('America/New_York');
-    await page.setGeolocation({ latitude: 40.7128, longitude: -74.0060 });
-    await page.setExtraHTTPHeaders({ 'Accept-Language': 'en-US,en;q=0.9' });
+        // 🛡️ Extreme Fingerprint Spoofing
+        await page.evaluateOnNewDocument(() => {
+            // --- Navigator overrides ---
+            Object.defineProperty(navigator, 'webdriver', { get: () => false });
+            Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+            Object.defineProperty(navigator, 'platform', { get: () => 'Win32' });
+            Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 8 });
+            Object.defineProperty(navigator, 'deviceMemory', { get: () => 8 });
 
-    // 🌐 Go to site
-    await page.goto('https://spotmate.online/', { waitUntil: 'networkidle2' });
+            // --- Plugins spoof ---
+            Object.defineProperty(navigator, 'plugins', {
+                get: () => [
+                    { name: 'Chrome PDF Plugin' },
+                    { name: 'Chrome PDF Viewer' },
+                    { name: 'Native Client' }
+                ]
+            });
 
-    // 🎵 Type Spotify link and submit
-    await page.type('#trackUrl', spotifyLink, { delay: 50 });
-    await page.click('#btnSubmit');
+            // --- Permissions spoof ---
+            const originalQuery = window.navigator.permissions.query;
+            window.navigator.permissions.query = (parameters) =>
+                parameters.name === 'notifications'
+                    ? Promise.resolve({ state: Notification.permission })
+                    : originalQuery(parameters);
 
-    // 🕒 Wait for Convert button (safer than using trackId directly)
-    await page.waitForSelector('button.btn.btn-success', { visible: true });
+            // --- Screen + Touch ---
+            Object.defineProperty(window, 'innerWidth', { get: () => 1920 });
+            Object.defineProperty(window, 'innerHeight', { get: () => 1080 });
+            Object.defineProperty(navigator, 'maxTouchPoints', { get: () => 1 });
 
-    // ✅ Click the Convert button by text match
-    await page.evaluate(() => {
-      const btns = [...document.querySelectorAll('button.btn.btn-success')];
-      const convertBtn = btns.find(b => b.innerText.trim().toLowerCase() === 'convert');
-      if (convertBtn) convertBtn.click();
-    });
+            // --- WebGL spoof ---
+            const getParameter = WebGLRenderingContext.prototype.getParameter;
+            WebGLRenderingContext.prototype.getParameter = function(parameter) {
+                if (parameter === 37445) return 'Intel Inc.';
+                if (parameter === 37446) return 'Intel Iris OpenGL Engine';
+                return getParameter.call(this, parameter);
+            };
+            if (window.WebGL2RenderingContext) {
+                const getParameter2 = WebGL2RenderingContext.prototype.getParameter;
+                WebGL2RenderingContext.prototype.getParameter = function(parameter) {
+                    if (parameter === 37445) return 'Intel Inc.';
+                    if (parameter === 37446) return 'Intel Iris OpenGL Engine';
+                    return getParameter2.call(this, parameter);
+                };
+            }
 
-    // 🎯 Capture the /convert response and resolve URL
-    const downloadUrl = await new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error('Timeout waiting for convert response')), 60000);
+            // --- Media devices spoof ---
+            navigator.mediaDevices = {
+                enumerateDevices: () => Promise.resolve([
+                    { kind: 'audioinput', label: 'Default Microphone', deviceId: 'default' },
+                    { kind: 'videoinput', label: 'HD Webcam', deviceId: 'webcam1' },
+                    { kind: 'audiooutput', label: 'Default Speakers', deviceId: 'default' }
+                ])
+            };
 
-      page.on('response', async (response) => {
-        try {
-          if (response.url().includes('/convert')) {
-            const json = await response.json();
-            clearTimeout(timeout);
-            if (json && json.url) resolve(json.url);
-            else reject(new Error('No download URL in response'));
-          }
-        } catch (err) {
-          clearTimeout(timeout);
-          reject(err);
+            // --- Battery API spoof ---
+            navigator.getBattery = () =>
+                Promise.resolve({
+                    charging: true,
+                    chargingTime: 0,
+                    dischargingTime: Infinity,
+                    level: 1.0,
+                    onchargingchange: null,
+                    onchargingtimechange: null,
+                    ondischargingtimechange: null,
+                    onlevelchange: null
+                });
+
+            // --- Clipboard API spoof ---
+            navigator.clipboard = {
+                readText: () => Promise.resolve(''),
+                writeText: () => Promise.resolve()
+            };
+
+            // --- Geolocation spoof ---
+            navigator.geolocation.getCurrentPosition = (success) => {
+                success({
+                    coords: {
+                        latitude: 40.7128,
+                        longitude: -74.0060,
+                        accuracy: 10
+                    }
+                });
+            };
+
+            // --- Network info spoof ---
+            navigator.connection = {
+                downlink: 10,
+                effectiveType: '4g',
+                rtt: 50,
+                saveData: false
+            };
+
+            // --- SpeechSynthesis spoof ---
+            window.speechSynthesis = {
+                getVoices: () => [
+                    { name: 'Google US English', lang: 'en-US' }
+                ]
+            };
+        });
+
+        // Custom UA + headers
+        await page.setUserAgent(
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
+            '(KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36'
+        );
+        await page.setExtraHTTPHeaders({
+            'Accept-Language': 'en-US,en;q=0.9',
+            'DNT': '1',
+            'Upgrade-Insecure-Requests': '1'
+        });
+
+        // Capture API request
+        page.on('response', async (response) => {
+            const url = response.url();
+            if (url.includes('/api/composer/')) {
+                try {
+                    const json = await response.json();
+                    if (json.dlink) {
+                        downloadUrl = json.dlink;
+                        console.log("🎯 Found download URL:", downloadUrl);
+                    }
+                } catch (err) {
+                    console.error("Error parsing JSON:", err);
+                }
+            }
+        });
+
+        // Visit site
+        await page.goto('https://spotisongdownloader.to', { waitUntil: 'networkidle2' });
+
+        // Simulate random human actions
+        await page.evaluate(() => window.focus());
+        for (let i = 0; i < 3; i++) {
+            await page.mouse.move(Math.random() * 800, Math.random() * 600, { steps: 10 });
+            await page.mouse.wheel({ deltaY: Math.random() * 200 });
+            await new Promise(r => setTimeout(r, 200 + Math.random() * 200));
         }
-      });
-    });
 
-    res.json({ success: true, downloadUrl });
+        // Type URL like a human
+        await page.waitForSelector('#id_url', { visible: true });
+        for (const char of spotifyUrl) {
+            await page.type('#id_url', char, { delay: Math.floor(Math.random() * 80) + 50 });
+        }
+        await new Promise(r => setTimeout(r, 400));
 
-  } catch (err) {
-    console.error('❌ Error:', err);
-    res.status(500).json({ error: 'Failed to fetch download link', details: err.message });
-  } finally {
-    if (browser) await browser.close();
-  }
+        // Click download
+        const submitBtn = await page.$('#submit');
+        const box = await submitBtn.boundingBox();
+        await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 6 });
+        await new Promise(r => setTimeout(r, 200));
+        await submitBtn.click();
+
+        // While waiting for navigation, wander the mouse
+        await Promise.race([
+            page.waitForNavigation({ waitUntil: 'networkidle2' }),
+            (async () => {
+                for (let i = 0; i < 6; i++) {
+                    await page.mouse.move(Math.random() * 900, Math.random() * 700, { steps: 4 });
+                    await page.mouse.wheel({ deltaY: Math.random() * 400 });
+                    await new Promise(r => setTimeout(r, 200 + Math.random() * 300));
+                }
+            })()
+        ]);
+
+        // Scroll + focus again
+        await page.mouse.wheel({ deltaY: 300 });
+        await page.evaluate(() => window.focus());
+
+        // Click "Generate Download Link"
+        await page.waitForSelector('a.button.is-primary[dlink]', { visible: true });
+        const genBtn = await page.$('a.button.is-primary[dlink]');
+        const genBox = await genBtn.boundingBox();
+        await page.mouse.move(genBox.x + genBox.width / 2, genBox.y + genBox.height / 2, { steps: 5 });
+        await genBtn.click();
+
+        // Pick m4a
+        await page.waitForSelector('select[name="qcars"]', { visible: true });
+        await page.select('select[name="qcars"]', 'm4a');
+
+        // Wait for API
+        console.log("⏳ Waiting for /api/composer request...");
+        const maxWaitTime = 15000;
+        const start = Date.now();
+        while (!downloadUrl && Date.now() - start < maxWaitTime) {
+            await new Promise(r => setTimeout(r, 200));
+        }
+
+        if (downloadUrl) {
+            return res.json({ success: true, downloadUrl });
+        } else {
+            return res.status(500).json({ success: false, error: "Failed to capture download link" });
+        }
+
+    } catch (error) {
+        console.error(error);
+        return res.status(500).json({ error: error.message });
+    } finally {
+        if (browser) {
+            await browser.close();
+        }
+    }
 });
 
 app.listen(PORT, () => {
