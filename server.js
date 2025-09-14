@@ -14,7 +14,7 @@ app.get("/search", async (req, res) => {
   const page = await browser.newPage();
 
   try {
-    await page.goto('https://animepahe.ru/anime', { waitUntil: 'domcontentloaded' });
+    await page.goto('https://animepahe.si/anime', { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('.tab-content .tab-pane');
     await autoScroll(page);
 
@@ -168,7 +168,7 @@ app.get('/video', async (req, res) => {
 app.get("/info", async (req, res) => {
   const url = req.query.url;
 
-  if (!url || !url.startsWith("https://animepahe.ru/anime/")) {
+  if (!url || !url.startsWith("https://animepahe.si/anime/")) {
     return res.status(400).json({ error: "Invalid or missing AnimePahe URL." });
   }
 
@@ -273,7 +273,7 @@ app.get('/api/episode', async (req, res) => {
 
   try {
     // Go directly to the anime page using the ID
-    await page.goto(`https://animepahe.ru/anime/${animeId}`, { waitUntil: 'domcontentloaded' });
+    await page.goto(`https://animepahe.si/anime/${animeId}`, { waitUntil: 'domcontentloaded' });
 
     // Verify the anime page loaded correctly
     const pageTitle = await page.title();
@@ -286,7 +286,7 @@ app.get('/api/episode', async (req, res) => {
     let found = null;
     for (let pageNum = 1; pageNum <= 50; pageNum++) {
       const data = await page.evaluate(async (animeId, pageNum) => {
-        const apiUrl = `https://animepahe.ru/api?m=release&id=${animeId}&page=${pageNum}&sort=episode_asc`;
+        const apiUrl = `https://animepahe.si/api?m=release&id=${animeId}&page=${pageNum}&sort=episode_asc`;
         const res = await fetch(apiUrl);
         if (!res.ok) return null;
         return await res.json();
@@ -310,7 +310,7 @@ app.get('/api/episode', async (req, res) => {
       return res.status(404).json({ error: `Episode ${episodeQuery} not found.` });
     }
 
-    const playUrl = `https://animepahe.ru/play/${animeId}/${found.session}`;
+    const playUrl = `https://animepahe.si/play/${animeId}/${found.session}`;
 
     // Go to play page
     const playPage = await browser.newPage();
