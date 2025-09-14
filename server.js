@@ -236,7 +236,7 @@ app.get("/info", async (req, res) => {
     const totalEpisodes = await page.evaluate(async (animeId) => {
       let total = 0;
       for (let pageNum = 1; pageNum <= 50; pageNum++) {
-        const res = await fetch(`https://animepahe.ru/api?m=release&id=${animeId}&page=${pageNum}`);
+        const res = await fetch(`https://animepahe.si/api?m=release&id=${animeId}&page=${pageNum}`);
         if (!res.ok) break;
         const json = await res.json();
         if (!json || !json.data || json.data.length === 0) break;
