@@ -1,12 +1,13 @@
 // server.js
 const express = require("express");
 const axios = require("axios");
+const cors = require("cors");
 const cheerio = require('cheerio');
 const puppeteer = require("puppeteer");
 const stringSimilarity = require("string-similarity");
 const app = express();
 const PORT = 7860;
-
+app.use(cors());
 app.get("/search", async (req, res) => {
   const animeQuery = req.query.q || "Naruto";
 
