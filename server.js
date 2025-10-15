@@ -284,12 +284,12 @@ app.get("/info", async (req, res) => {
   }
 });
 
-app.get('/api/episode', async (req, res) => {
+app.get("/api/episode", async (req, res) => {
   const animeId = req.query.id;
   const episodeQuery = parseInt(req.query.episode);
 
   if (!animeId || isNaN(episodeQuery)) {
-    return res.status(400).json({ error: 'id and episode query parameters are required' });
+    return res.status(400).json({ error: "id and episode query parameters are required" });
   }
 
   const browser = await puppeteer.launch({ headless: true });
@@ -297,13 +297,13 @@ app.get('/api/episode', async (req, res) => {
 
   try {
     // Go directly to the anime page using the ID
-    await page.goto(`https://animepahe.si/anime/${animeId}`, { waitUntil: 'domcontentloaded' });
+    await page.goto(`https://animepahe.si/anime/${animeId}`, { waitUntil: "domcontentloaded" });
 
     // Verify the anime page loaded correctly
     const pageTitle = await page.title();
-    if (pageTitle.includes('404') || pageTitle.includes('Not Found')) {
+    if (pageTitle.includes("404") || pageTitle.includes("Not Found")) {
       await browser.close();
-      return res.status(404).json({ error: 'Anime not found' });
+      return res.status(404).json({ error: "Anime not found" });
     }
 
     // Search for episode
@@ -318,12 +318,12 @@ app.get('/api/episode', async (req, res) => {
 
       if (!data || !data.data) continue;
 
-      const match = data.data.find(ep => ep.episode == episodeQuery || ep.number == episodeQuery);
+      const match = data.data.find((ep) => ep.episode == episodeQuery || ep.number == episodeQuery);
       if (match) {
         found = {
           episode: match.episode,
-          snapshot: match.snapshot.replace(/\\\//g, '/'),
-          session: match.session
+          snapshot: match.snapshot.replace(/\\\//g, "/"),
+          session: match.session,
         };
         break;
       }
@@ -334,59 +334,65 @@ app.get('/api/episode', async (req, res) => {
       return res.status(404).json({ error: `Episode ${episodeQuery} not found.` });
     }
 
+    // Upload snapshot to UploadNX
+    let uploadedSnapshot = found.snapshot;
+    try {
+      const imgRes = await axios.get(found.snapshot, { responseType: "arraybuffer" });
+      const form = new FormData();
+      form.append("file", Buffer.from(imgRes.data), `snapshot-${Date.now()}.jpg`);
+
+      const uploadRes = await axios.post("https://uploadnx.com/api/upload", form, {
+        headers: form.getHeaders(),
+      });
+
+      if (uploadRes.data && uploadRes.data.files && uploadRes.data.files[0]) {
+        uploadedSnapshot = uploadRes.data.files[0].url.replace("upload", "bc");
+      }
+    } catch (err) {
+      console.error("Snapshot upload failed:", err.message);
+    }
+
     const playUrl = `https://animepahe.si/play/${animeId}/${found.session}`;
 
     // Go to play page
     const playPage = await browser.newPage();
-    await playPage.goto(playUrl, { waitUntil: 'domcontentloaded' });
-    await new Promise(r => setTimeout(r, 5000));
+    await playPage.goto(playUrl, { waitUntil: "domcontentloaded" });
+    await new Promise((r) => setTimeout(r, 5000));
 
-    // Extractxx and organize links by quality and audio type
+    // Extract streaming & download links
     const links = await playPage.evaluate(() => {
-      const result = {
-        sub: {},
-        dub: {}
-      };
-      
-      // Extract streaming links (kwik.si)
-      const streamButtons = document.querySelectorAll('#resolutionMenu button[data-src]');
-      streamButtons.forEach(button => {
-        const quality = button.getAttribute('data-resolution') + 'p';
-        const audio = button.getAttribute('data-audio');
-        const url = button.getAttribute('data-src');
-        
-        if (audio === 'jpn') {
-          result.sub[quality] = url;
-        } else if (audio === 'eng') {
-          result.dub[quality] = url;
-        }
+      const result = { sub: {}, dub: {} };
+
+      const streamButtons = document.querySelectorAll("#resolutionMenu button[data-src]");
+      streamButtons.forEach((button) => {
+        const quality = button.getAttribute("data-resolution") + "p";
+        const audio = button.getAttribute("data-audio");
+        const url = button.getAttribute("data-src");
+        if (audio === "jpn") result.sub[quality] = url;
+        else if (audio === "eng") result.dub[quality] = url;
       });
-      
-      // Extract download links (pahe.win)
+
       const downloadLinks = document.querySelectorAll('#pickDownload a[href*="pahe.win"]');
-      downloadLinks.forEach(a => {
+      downloadLinks.forEach((a) => {
         const text = a.innerText.trim().toLowerCase();
         const href = a.href;
-        const isDub = text.includes('eng');
-        
-        if (text.includes('360')) {
-          if (isDub) result.dub['360p_download'] = href;
-          else result.sub['360p_download'] = href;
-        } 
-        else if (text.includes('480')) {
-          if (isDub) result.dub['480p_download'] = href;
-          else result.sub['480p_download'] = href;
-        }
-        else if (text.includes('720')) {
-          if (isDub) result.dub['720p_download'] = href;
-          else result.sub['720p_download'] = href;
-        }
-        else if (text.includes('1080')) {
-          if (isDub) result.dub['1080p_download'] = href;
-          else result.sub['1080p_download'] = href;
+        const isDub = text.includes("eng");
+
+        if (text.includes("360")) {
+          if (isDub) result.dub["360p_download"] = href;
+          else result.sub["360p_download"] = href;
+        } else if (text.includes("480")) {
+          if (isDub) result.dub["480p_download"] = href;
+          else result.sub["480p_download"] = href;
+        } else if (text.includes("720")) {
+          if (isDub) result.dub["720p_download"] = href;
+          else result.sub["720p_download"] = href;
+        } else if (text.includes("1080")) {
+          if (isDub) result.dub["1080p_download"] = href;
+          else result.sub["1080p_download"] = href;
         }
       });
-      
+
       return result;
     });
 
@@ -396,13 +402,13 @@ app.get('/api/episode', async (req, res) => {
     return res.json({
       animeId,
       episode: found.episode,
-      snapshot: found.snapshot, // Using the original snapshot URL directly
+      snapshot: uploadedSnapshot,
       playUrl,
-      links
+      links,
     });
-
   } catch (err) {
     await browser.close();
+    console.error("Episode info error:", err.message);
     return res.status(500).json({ error: err.message });
   }
 });
