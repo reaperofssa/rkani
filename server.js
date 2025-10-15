@@ -467,11 +467,18 @@ app.get('/resolvex', async (req, res) => {
     await randomScroll(page);
     await delay(1500);
 
-    // Step 2: Extract kwik.si link
-    const kwikLink = await page.$$eval('a.btn.btn-secondary.btn-block.redirect', links =>
-      links.find(a => a.href.includes('kwik.cx/f'))?.href
+    // Step 2: Extract kwik.si link (accept both /f/ and /d/)
+    let kwikLink = await page.$$eval('a.btn.btn-secondary.btn-block.redirect', links =>
+      links.find(a => a.href.includes('kwik.cx/f') || a.href.includes('kwik.cx/d'))?.href
     );
     if (!kwikLink) throw new Error('kwik.cx link not found on pahe.win');
+
+    // Convert /d/ to /f/ if detected
+    if (kwikLink.includes('/d/')) {
+      console.log('Detected /d/ URL, converting to /f/');
+      kwikLink = kwikLink.replace('/d/', '/f/');
+      console.log('Converted URL:', kwikLink);
+    }
 
     let mp4Url = null;
     let mp4UrlFound = false;
@@ -519,6 +526,19 @@ app.get('/resolvex', async (req, res) => {
     await page.waitForSelector(buttonSelector, { timeout: 15000 });
     await page.click(buttonSelector);
     console.log('Clicked Kwik.si button');
+
+    // Check if redirected to /d/ after button click
+    await delay(2000);
+    let currentUrl = page.url();
+    console.log('Current URL after button click:', currentUrl);
+
+    if (currentUrl.includes('/d/')) {
+      console.log('Detected /d/ redirect, converting to /f/ and reloading');
+      const fixedUrl = currentUrl.replace('/d/', '/f/');
+      await page.goto(fixedUrl, { waitUntil: 'networkidle2', timeout: 30000 });
+      await delay(2000);
+      console.log('Reloaded with /f/ URL:', fixedUrl);
+    }
 
     // Step 5: Extended sniffing & retries
     let waitTime = 0;
