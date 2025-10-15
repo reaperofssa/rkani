@@ -468,13 +468,15 @@ app.get('/resolvex', async (req, res) => {
     await delay(1500);
 
     // Step 2: Extract kwik.si link
-    const kwikLink = await page.$$eval('a.btn.btn-secondary.btn-block.redirect', links =>
-      links.find(a => a.href.includes('kwik.cx'))?.href
-    );
-    if (!kwikLink) throw new Error('kwik.cx link not found on pahe.win');
+    const kwikLink = (await page.$$eval(
+  'a.btn.btn-secondary.btn-block.redirect',
+  links => links.find(a => a.href.includes('kwik.cx'))?.href
+))?.replace('/d/', '/f/');
 
-    let mp4Url = null;
-    let mp4UrlFound = false;
+if (!kwikLink) throw new Error('kwik.cx link not found on pahe.win');
+
+let mp4Url = null;
+let mp4UrlFound = false;
 
     // Step 3: Intercept requests & responses
     await page.setRequestInterception(true);
