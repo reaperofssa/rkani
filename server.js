@@ -469,7 +469,7 @@ app.get('/resolvex', async (req, res) => {
 
     // Step 2: Extract kwik.si link
     const kwikLink = await page.$$eval('a.btn.btn-secondary.btn-block.redirect', links =>
-      links.find(a => a.href.includes('kwik.cx'))?.href
+      links.find(a => a.href.includes('kwik.cx/f'))?.href
     );
     if (!kwikLink) throw new Error('kwik.cx link not found on pahe.win');
 
