@@ -2,6 +2,7 @@
 const express = require("express");
 const axios = require("axios");
 const cors = require("cors");
+const FormData = require("form-data");
 const cheerio = require('cheerio');
 const puppeteer = require("puppeteer");
 const stringSimilarity = require("string-similarity");
@@ -233,7 +234,27 @@ app.get("/info", async (req, res) => {
       };
     });
 
-    // Fetch total number of episodes using fetch inside browser context
+    // Upload poster to UploadNX
+    let uploadedPosterUrl = data.poster;
+    if (data.poster) {
+      try {
+        const imgRes = await axios.get(data.poster, { responseType: "arraybuffer" });
+        const form = new FormData();
+        form.append("file", Buffer.from(imgRes.data), "poster.jpg");
+
+        const uploadRes = await axios.post("https://uploadnx.zone.id/api/upload", form, {
+          headers: form.getHeaders(),
+        });
+
+        if (uploadRes.data && uploadRes.data.short_url) {
+          uploadedPosterUrl = uploadRes.data.short_url;
+        }
+      } catch (err) {
+        console.error("Poster upload failed:", err.message);
+      }
+    }
+
+    // Fetch total number of episodes
     const totalEpisodes = await page.evaluate(async (animeId) => {
       let total = 0;
       for (let pageNum = 1; pageNum <= 50; pageNum++) {
@@ -248,8 +269,10 @@ app.get("/info", async (req, res) => {
 
     await browser.close();
 
+    // Keep the same response structure
     res.json({
       ...data,
+      poster: uploadedPosterUrl,
       animeId,
       totalEpisodes
     });
