@@ -335,22 +335,24 @@ app.get("/api/episode", async (req, res) => {
     }
 
     // Upload snapshot to UploadNX
-    let uploadedSnapshot = found.snapshot;
-    try {
-      const imgRes = await axios.get(found.snapshot, { responseType: "arraybuffer" });
-      const form = new FormData();
-      form.append("file", Buffer.from(imgRes.data), `snapshot-${Date.now()}.jpg`);
+let uploadedSnapshot = found.snapshot;
+if (found.snapshot) {
+  try {
+    const imgRes = await axios.get(found.snapshot, { responseType: "arraybuffer" });
+    const form = new FormData();
+    form.append("file", Buffer.from(imgRes.data), `snapshot-${Date.now()}.jpg`);
 
-      const uploadRes = await axios.post("https://uploadnx.com/api/upload", form, {
-        headers: form.getHeaders(),
-      });
+    const uploadRes = await axios.post("https://uploadnx.zone.id/api/upload", form, {
+      headers: form.getHeaders(),
+    });
 
-      if (uploadRes.data && uploadRes.data.files && uploadRes.data.files[0]) {
-        uploadedSnapshot = uploadRes.data.files[0].url.replace("upload", "bc");
-      }
-    } catch (err) {
-      console.error("Snapshot upload failed:", err.message);
+    if (uploadRes.data && uploadRes.data.short_url) {
+      uploadedSnapshot = uploadRes.data.short_url;
     }
+  } catch (err) {
+    console.error("Snapshot upload failed:", err.message);
+  }
+}
 
     const playUrl = `https://animepahe.si/play/${animeId}/${found.session}`;
 
