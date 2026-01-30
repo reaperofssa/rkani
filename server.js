@@ -416,16 +416,32 @@ if (found.snapshot) {
 });
 
 app.get('/resolvex', async (req, res) => {
-  const paheURL = req.query.url;
-  if (!paheURL || !paheURL.startsWith('https://pahe.win/')) {
-    return res.status(400).json({ error: 'Invalid or missing pahe.win URL' });
+  const inputURL = req.query.url;
+  
+  console.log('=== RESOLVEX REQUEST STARTED ===');
+  console.log('Input URL:', inputURL);
+  
+  if (!inputURL) {
+    console.log('❌ ERROR: No URL provided');
+    return res.status(400).json({ error: 'Missing URL parameter' });
   }
+
+  const isPaheURL = inputURL.startsWith('https://pahe.win/');
+  const isKwikURL = inputURL.includes('kwik.cx/');
+  
+  if (!isPaheURL && !isKwikURL) {
+    console.log('❌ ERROR: Invalid URL - must be pahe.win or kwik.cx');
+    return res.status(400).json({ error: 'Invalid URL - must be pahe.win or kwik.cx URL' });
+  }
+
+  console.log('URL Type:', isPaheURL ? 'pahe.win' : 'kwik.cx');
 
   let browser;
   try {
     const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
     const spoofFingerprint = async (page) => {
+      console.log('🔧 Setting up browser fingerprint spoofing...');
       await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/114.0.0.0 Safari/537.36');
       await page.setViewport({ width: 1366, height: 768 });
       await page.evaluateOnNewDocument(() => {
@@ -434,9 +450,11 @@ app.get('/resolvex', async (req, res) => {
         Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
         Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3] });
       });
+      console.log('✅ Fingerprint spoofing configured');
     };
 
     const randomScroll = async (page) => {
+      console.log('📜 Performing random scroll...');
       await page.evaluate(() => {
         return new Promise(resolve => {
           let totalHeight = 0;
@@ -451,40 +469,78 @@ app.get('/resolvex', async (req, res) => {
           }, 200);
         });
       });
+      console.log('✅ Scroll completed');
     };
 
+    console.log('🚀 Launching Puppeteer browser...');
     browser = await puppeteer.launch({
       headless: true,
       args: ['--no-sandbox', '--disable-setuid-sandbox']
     });
+    console.log('✅ Browser launched');
 
     const page = await browser.newPage();
     await spoofFingerprint(page);
 
-    // Step 1: Navigate to pahe.win
-    await page.goto(paheURL, { waitUntil: 'networkidle2' });
-    await delay(2500);
-    await randomScroll(page);
-    await delay(1500);
+    let kwikLink = null;
 
-    // Step 2: Extract kwik.si link (accept both /f/ and /d/)
-    let kwikLink = await page.$$eval('a.btn.btn-secondary.btn-block.redirect', links =>
-      links.find(a => a.href.includes('kwik.cx/f') || a.href.includes('kwik.cx/d'))?.href
-    );
-    if (!kwikLink) throw new Error('kwik.cx link not found on pahe.win');
+    // Step 1: Handle pahe.win URL (if applicable)
+    if (isPaheURL) {
+      console.log('\n=== STEP 1: NAVIGATING TO PAHE.WIN ===');
+      console.log('Target URL:', inputURL);
+      
+      const paheResponse = await page.goto(inputURL, { waitUntil: 'networkidle2' });
+      console.log('📡 Response Status:', paheResponse.status());
+      console.log('✅ Page loaded successfully');
+      
+      console.log('⏳ Waiting 2500ms...');
+      await delay(2500);
+      
+      await randomScroll(page);
+      
+      console.log('⏳ Waiting 1500ms...');
+      await delay(1500);
 
-    // Convert /d/ to /f/ if detected
-    if (kwikLink.includes('/d/')) {
-      console.log('Detected /d/ URL, converting to /f/');
-      kwikLink = kwikLink.replace('/d/', '/f/');
-      console.log('Converted URL:', kwikLink);
+      // Step 2: Extract kwik.cx link
+      console.log('\n=== STEP 2: EXTRACTING KWIK.CX LINK ===');
+      kwikLink = await page.$$eval('a.btn.btn-secondary.btn-block.redirect', links =>
+        links.find(a => a.href.includes('kwik.cx/f') || a.href.includes('kwik.cx/d'))?.href
+      );
+      
+      if (!kwikLink) {
+        console.log('❌ ERROR: kwik.cx link not found on pahe.win');
+        throw new Error('kwik.cx link not found on pahe.win');
+      }
+      
+      console.log('✅ Kwik link found:', kwikLink);
+
+      // Convert /d/ to /f/ if detected
+      if (kwikLink.includes('/d/')) {
+        console.log('🔄 Detected /d/ URL, converting to /f/');
+        kwikLink = kwikLink.replace('/d/', '/f/');
+        console.log('✅ Converted URL:', kwikLink);
+      }
+    } else {
+      // Direct kwik.cx URL
+      console.log('\n=== STEP 1: USING DIRECT KWIK.CX LINK ===');
+      kwikLink = inputURL;
+      console.log('Kwik link:', kwikLink);
+      
+      // Convert /d/ to /f/ if detected
+      if (kwikLink.includes('/d/')) {
+        console.log('🔄 Detected /d/ URL, converting to /f/');
+        kwikLink = kwikLink.replace('/d/', '/f/');
+        console.log('✅ Converted URL:', kwikLink);
+      }
     }
 
     let mp4Url = null;
     let mp4UrlFound = false;
 
-    // Step 3: Intercept requests & responses
+    // Step 3: Set up interception
+    console.log('\n=== STEP 3: SETTING UP REQUEST/RESPONSE INTERCEPTION ===');
     await page.setRequestInterception(true);
+    
     page.on('request', request => {
       const url = request.url();
       if (url.endsWith('.mp4') && (
@@ -494,7 +550,7 @@ app.get('/resolvex', async (req, res) => {
       )) {
         mp4Url = url;
         mp4UrlFound = true;
-        console.log('MP4 URL captured:', url);
+        console.log('🎥 MP4 URL CAPTURED (request):', url);
       }
       request.continue();
     });
@@ -503,44 +559,73 @@ app.get('/resolvex', async (req, res) => {
       const url = response.url();
       const status = response.status();
 
+      // Log all responses with status codes
+      if (url.endsWith('.mp4') || url.includes('kwik') || status >= 300) {
+        console.log(`📡 Response: ${status} - ${url.substring(0, 100)}${url.length > 100 ? '...' : ''}`);
+      }
+
       if (status >= 300 && status < 400) {
         const location = response.headers()['location'];
         if (location && location.endsWith('.mp4')) {
           mp4Url = location;
           mp4UrlFound = true;
-          console.log('MP4 URL from redirect:', location);
+          console.log('🎥 MP4 URL CAPTURED (redirect):', location);
+          console.log('📡 Redirect Status:', status);
         }
       }
       if (url.endsWith('.mp4')) {
         mp4Url = url;
         mp4UrlFound = true;
-        console.log('MP4 URL from response:', url);
+        console.log('🎥 MP4 URL CAPTURED (response):', url);
+        console.log('📡 Response Status:', status);
       }
     });
+    
+    console.log('✅ Interception configured');
 
-    // Step 4: Go to kwik.si and click the button
-    await page.goto(kwikLink, { waitUntil: 'networkidle2', timeout: 30000 });
+    // Step 4: Navigate to kwik.cx and click button
+    console.log('\n=== STEP 4: NAVIGATING TO KWIK.CX ===');
+    console.log('Target URL:', kwikLink);
+    
+    const kwikResponse = await page.goto(kwikLink, { waitUntil: 'networkidle2', timeout: 30000 });
+    console.log('📡 Response Status:', kwikResponse.status());
+    console.log('✅ Page loaded');
+    
+    console.log('⏳ Waiting 2000ms...');
     await delay(2000);
 
+    console.log('\n=== STEP 5: CLICKING DOWNLOAD BUTTON ===');
     const buttonSelector = 'button.button.is-uppercase.is-success.is-fullwidth';
+    console.log('Looking for button:', buttonSelector);
+    
     await page.waitForSelector(buttonSelector, { timeout: 15000 });
+    console.log('✅ Button found');
+    
     await page.click(buttonSelector);
-    console.log('Clicked Kwik.si button');
+    console.log('✅ Button clicked');
 
     // Check if redirected to /d/ after button click
+    console.log('⏳ Waiting 2000ms...');
     await delay(2000);
+    
     let currentUrl = page.url();
-    console.log('Current URL after button click:', currentUrl);
+    console.log('📍 Current URL after button click:', currentUrl);
 
     if (currentUrl.includes('/d/')) {
-      console.log('Detected /d/ redirect, converting to /f/ and reloading');
+      console.log('🔄 Detected /d/ redirect, converting to /f/ and reloading');
       const fixedUrl = currentUrl.replace('/d/', '/f/');
-      await page.goto(fixedUrl, { waitUntil: 'networkidle2', timeout: 30000 });
+      console.log('New URL:', fixedUrl);
+      
+      const reloadResponse = await page.goto(fixedUrl, { waitUntil: 'networkidle2', timeout: 30000 });
+      console.log('📡 Reload Response Status:', reloadResponse.status());
+      
+      console.log('⏳ Waiting 2000ms...');
       await delay(2000);
-      console.log('Reloaded with /f/ URL:', fixedUrl);
+      console.log('✅ Reloaded with /f/ URL');
     }
 
-    // Step 5: Extended sniffing & retries
+    // Step 6: Extended sniffing & retries
+    console.log('\n=== STEP 6: MONITORING FOR MP4 URL ===');
     let waitTime = 0;
     const maxWaitTime = 30000;
 
@@ -549,9 +634,11 @@ app.get('/resolvex', async (req, res) => {
       waitTime += 1000;
 
       if (waitTime % 5000 === 0) {
+        console.log(`⏱️  Monitoring... (${waitTime}ms / ${maxWaitTime}ms)`);
+        
         try {
           const currentUrl = page.url();
-          console.log('Current page URL:', currentUrl);
+          console.log('📍 Current page URL:', currentUrl);
 
           if (currentUrl.endsWith('.mp4') && (
             currentUrl.includes('cdn') || currentUrl.includes('vault') || 
@@ -559,13 +646,16 @@ app.get('/resolvex', async (req, res) => {
           )) {
             mp4Url = currentUrl;
             mp4UrlFound = true;
-            console.log('Direct MP4 URL found:', currentUrl);
+            console.log('🎥 DIRECT MP4 URL FOUND:', currentUrl);
             break;
           }
 
+          console.log('🔍 Scanning page content for MP4 URLs...');
           const pageContent = await page.content();
           const mp4Match = pageContent.match(/(https?:\/\/[^\s"'<>]+\.mp4[^\s"'<>]*)/gi);
+          
           if (mp4Match && mp4Match.length > 0) {
+            console.log(`📋 Found ${mp4Match.length} potential MP4 URL(s) in content`);
             const found = mp4Match.find(match =>
               match.includes('cdn') || match.includes('vault') ||
               match.includes('eu') || match.includes('nextcdn')
@@ -573,25 +663,50 @@ app.get('/resolvex', async (req, res) => {
             if (found) {
               mp4Url = found;
               mp4UrlFound = true;
-              console.log('MP4 URL from page content:', mp4Url);
+              console.log('🎥 MP4 URL FOUND in page content:', mp4Url);
               break;
             }
           }
         } catch (err) {
-          console.log('Error during periodic check:', err.message);
+          console.log('⚠️  Error during periodic check:', err.message);
         }
       }
     }
 
-    if (!mp4UrlFound || !mp4Url) throw new Error('Failed to find a valid MP4 URL');
+    if (!mp4UrlFound || !mp4Url) {
+      console.log('❌ FAILED: No valid MP4 URL found after monitoring');
+      throw new Error('Failed to find a valid MP4 URL');
+    }
+
+    console.log('\n=== SUCCESS ===');
+    console.log('✅ Kwik Link:', kwikLink);
+    console.log('✅ MP4 Link:', mp4Url);
 
     const response = { kwikLink, mp4Link: mp4Url };
+    
+    console.log('🔒 Closing browser...');
     await browser.close();
+    console.log('✅ Browser closed');
+    
+    console.log('📤 Sending response with status 200');
+    console.log('=== RESOLVEX REQUEST COMPLETED ===\n');
+    
     return res.status(200).json(response);
 
   } catch (err) {
-    if (browser) await browser.close();
-    console.error('Error in resolvex:', err.message);
+    console.log('\n=== ERROR OCCURRED ===');
+    console.error('❌ Error in resolvex:', err.message);
+    console.error('Stack trace:', err.stack);
+    
+    if (browser) {
+      console.log('🔒 Closing browser due to error...');
+      await browser.close();
+      console.log('✅ Browser closed');
+    }
+    
+    console.log('📤 Sending error response with status 500');
+    console.log('=== RESOLVEX REQUEST FAILED ===\n');
+    
     return res.status(500).json({ error: err.message });
   }
 });
