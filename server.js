@@ -440,17 +440,192 @@ app.get('/resolvex', async (req, res) => {
   try {
     const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-    const spoofFingerprint = async (page) => {
-      console.log('🔧 Setting up browser fingerprint spoofing...');
-      await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/114.0.0.0 Safari/537.36');
-      await page.setViewport({ width: 1366, height: 768 });
-      await page.evaluateOnNewDocument(() => {
-        Object.defineProperty(navigator, 'webdriver', { get: () => false });
-        window.chrome = { runtime: {} };
-        Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
-        Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3] });
+    const heavySpoofFingerprint = async (page) => {
+      console.log('🔧 Setting up HEAVY browser fingerprint spoofing...');
+      
+      // Set realistic user agent
+      const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+      await page.setUserAgent(userAgent);
+      console.log('✅ User Agent set:', userAgent);
+      
+      // Set viewport
+      await page.setViewport({ 
+        width: 1920, 
+        height: 1080,
+        deviceScaleFactor: 1,
+        hasTouch: false,
+        isLandscape: true,
+        isMobile: false
       });
-      console.log('✅ Fingerprint spoofing configured');
+      console.log('✅ Viewport configured: 1920x1080');
+      
+      // Set extra HTTP headers
+      await page.setExtraHTTPHeaders({
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'none',
+        'Sec-Fetch-User': '?1',
+        'Cache-Control': 'max-age=0',
+        'DNT': '1'
+      });
+      console.log('✅ Extra HTTP headers set');
+      
+      // Heavy JavaScript evasion techniques
+      await page.evaluateOnNewDocument(() => {
+        // Webdriver
+        Object.defineProperty(navigator, 'webdriver', {
+          get: () => false
+        });
+        
+        // Chrome object
+        window.chrome = {
+          runtime: {},
+          loadTimes: function() {},
+          csi: function() {},
+          app: {}
+        };
+        
+        // Permissions
+        const originalQuery = window.navigator.permissions.query;
+        window.navigator.permissions.query = (parameters) => (
+          parameters.name === 'notifications' ?
+            Promise.resolve({ state: Notification.permission }) :
+            originalQuery(parameters)
+        );
+        
+        // Plugins
+        Object.defineProperty(navigator, 'plugins', {
+          get: () => [
+            { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer', description: 'Portable Document Format' },
+            { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai', description: '' },
+            { name: 'Native Client', filename: 'internal-nacl-plugin', description: '' }
+          ]
+        });
+        
+        // Languages
+        Object.defineProperty(navigator, 'languages', {
+          get: () => ['en-US', 'en']
+        });
+        
+        // Platform
+        Object.defineProperty(navigator, 'platform', {
+          get: () => 'Win32'
+        });
+        
+        // Hardware concurrency
+        Object.defineProperty(navigator, 'hardwareConcurrency', {
+          get: () => 8
+        });
+        
+        // Device memory
+        Object.defineProperty(navigator, 'deviceMemory', {
+          get: () => 8
+        });
+        
+        // Vendor
+        Object.defineProperty(navigator, 'vendor', {
+          get: () => 'Google Inc.'
+        });
+        
+        // MaxTouchPoints
+        Object.defineProperty(navigator, 'maxTouchPoints', {
+          get: () => 0
+        });
+        
+        // Media devices
+        if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
+          navigator.mediaDevices.enumerateDevices = () => Promise.resolve([
+            { kind: 'audioinput', deviceId: 'default', label: '', groupId: '' },
+            { kind: 'videoinput', deviceId: 'default', label: '', groupId: '' }
+          ]);
+        }
+        
+        // WebGL
+        const getParameter = WebGLRenderingContext.prototype.getParameter;
+        WebGLRenderingContext.prototype.getParameter = function(parameter) {
+          if (parameter === 37445) {
+            return 'Intel Inc.';
+          }
+          if (parameter === 37446) {
+            return 'Intel Iris OpenGL Engine';
+          }
+          return getParameter.apply(this, [parameter]);
+        };
+        
+        // Battery
+        if (navigator.getBattery) {
+          navigator.getBattery = () => Promise.resolve({
+            charging: true,
+            chargingTime: 0,
+            dischargingTime: Infinity,
+            level: 1
+          });
+        }
+        
+        // Connection
+        Object.defineProperty(navigator, 'connection', {
+          get: () => ({
+            effectiveType: '4g',
+            rtt: 50,
+            downlink: 10,
+            saveData: false
+          })
+        });
+        
+        // Timezone
+        const originalDateTimeFormat = Intl.DateTimeFormat;
+        Intl.DateTimeFormat = function(...args) {
+          return originalDateTimeFormat.apply(this, args);
+        };
+        Intl.DateTimeFormat.prototype = originalDateTimeFormat.prototype;
+        
+        // Screen
+        Object.defineProperty(screen, 'colorDepth', { get: () => 24 });
+        Object.defineProperty(screen, 'pixelDepth', { get: () => 24 });
+        
+        // Override toString
+        const originalToString = Function.prototype.toString;
+        Function.prototype.toString = function() {
+          if (this === navigator.permissions.query) {
+            return 'function query() { [native code] }';
+          }
+          if (this === navigator.mediaDevices.enumerateDevices) {
+            return 'function enumerateDevices() { [native code] }';
+          }
+          return originalToString.call(this);
+        };
+        
+        // Window size matches screen size
+        Object.defineProperty(window, 'outerWidth', { get: () => window.screen.width });
+        Object.defineProperty(window, 'outerHeight', { get: () => window.screen.height });
+        
+        // Remove headless indicators
+        delete navigator.__proto__.webdriver;
+        
+        // Canvas fingerprint noise
+        const originalToDataURL = HTMLCanvasElement.prototype.toDataURL;
+        HTMLCanvasElement.prototype.toDataURL = function(type) {
+          const context = this.getContext('2d');
+          if (context) {
+            const imageData = context.getImageData(0, 0, this.width, this.height);
+            for (let i = 0; i < imageData.data.length; i += 4) {
+              imageData.data[i] += Math.floor(Math.random() * 3) - 1;
+              imageData.data[i + 1] += Math.floor(Math.random() * 3) - 1;
+              imageData.data[i + 2] += Math.floor(Math.random() * 3) - 1;
+            }
+            context.putImageData(imageData, 0, 0);
+          }
+          return originalToDataURL.apply(this, [type]);
+        };
+        
+        console.log('Heavy spoofing applied');
+      });
+      console.log('✅ Heavy JavaScript evasion techniques applied');
     };
 
     const randomScroll = async (page) => {
@@ -458,29 +633,64 @@ app.get('/resolvex', async (req, res) => {
       await page.evaluate(() => {
         return new Promise(resolve => {
           let totalHeight = 0;
-          const distance = 150;
+          const distance = Math.floor(Math.random() * 100) + 100;
           const timer = setInterval(() => {
-            window.scrollBy(0, distance);
-            totalHeight += distance;
+            const scrollAmount = Math.floor(Math.random() * 50) + distance;
+            window.scrollBy(0, scrollAmount);
+            totalHeight += scrollAmount;
             if (totalHeight >= document.body.scrollHeight) {
               clearInterval(timer);
               resolve();
             }
-          }, 200);
+          }, Math.floor(Math.random() * 100) + 150);
         });
       });
       console.log('✅ Scroll completed');
     };
 
-    console.log('🚀 Launching Puppeteer browser...');
+    const randomMouseMovement = async (page) => {
+      console.log('🖱️  Simulating random mouse movements...');
+      await page.evaluate(() => {
+        for (let i = 0; i < 5; i++) {
+          const x = Math.floor(Math.random() * window.innerWidth);
+          const y = Math.floor(Math.random() * window.innerHeight);
+          const event = new MouseEvent('mousemove', {
+            clientX: x,
+            clientY: y,
+            bubbles: true
+          });
+          document.dispatchEvent(event);
+        }
+      });
+      console.log('✅ Mouse movements simulated');
+    };
+
+    console.log('🚀 Launching Puppeteer browser with stealth mode...');
     browser = await puppeteer.launch({
       headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox']
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-blink-features=AutomationControlled',
+        '--disable-dev-shm-usage',
+        '--disable-accelerated-2d-canvas',
+        '--no-first-run',
+        '--no-zygote',
+        '--disable-gpu',
+        '--disable-web-security',
+        '--disable-features=IsolateOrigins,site-per-process',
+        '--window-size=1920,1080',
+        '--disable-infobars',
+        '--disable-notifications',
+        '--disable-popup-blocking'
+      ],
+      ignoreHTTPSErrors: true,
+      defaultViewport: null
     });
-    console.log('✅ Browser launched');
+    console.log('✅ Browser launched with stealth arguments');
 
     const page = await browser.newPage();
-    await spoofFingerprint(page);
+    await heavySpoofFingerprint(page);
 
     let kwikLink = null;
 
@@ -489,17 +699,21 @@ app.get('/resolvex', async (req, res) => {
       console.log('\n=== STEP 1: NAVIGATING TO PAHE.WIN ===');
       console.log('Target URL:', inputURL);
       
-      const paheResponse = await page.goto(inputURL, { waitUntil: 'networkidle2' });
+      const paheResponse = await page.goto(inputURL, { 
+        waitUntil: 'networkidle2',
+        timeout: 60000
+      });
       console.log('📡 Response Status:', paheResponse.status());
       console.log('✅ Page loaded successfully');
       
-      console.log('⏳ Waiting 2500ms...');
-      await delay(2500);
+      console.log('⏳ Waiting 3000ms...');
+      await delay(3000);
       
+      await randomMouseMovement(page);
       await randomScroll(page);
       
-      console.log('⏳ Waiting 1500ms...');
-      await delay(1500);
+      console.log('⏳ Waiting 2000ms...');
+      await delay(2000);
 
       // Step 2: Extract kwik.cx link
       console.log('\n=== STEP 2: EXTRACTING KWIK.CX LINK ===');
@@ -543,6 +757,14 @@ app.get('/resolvex', async (req, res) => {
     
     page.on('request', request => {
       const url = request.url();
+      
+      // Block unnecessary resources to speed up and avoid detection
+      const blockedResources = ['image', 'stylesheet', 'font', 'media'];
+      if (blockedResources.includes(request.resourceType())) {
+        request.abort();
+        return;
+      }
+      
       if (url.endsWith('.mp4') && (
         url.includes('cdn') || url.includes('vault') || url.includes('eu') ||
         url.includes('bunny') || url.includes('nextcdn') ||
@@ -587,26 +809,70 @@ app.get('/resolvex', async (req, res) => {
     console.log('\n=== STEP 4: NAVIGATING TO KWIK.CX ===');
     console.log('Target URL:', kwikLink);
     
-    const kwikResponse = await page.goto(kwikLink, { waitUntil: 'networkidle2', timeout: 30000 });
+    const kwikResponse = await page.goto(kwikLink, { 
+      waitUntil: 'domcontentloaded',
+      timeout: 60000 
+    });
     console.log('📡 Response Status:', kwikResponse.status());
+    
+    if (kwikResponse.status() === 403) {
+      console.log('⚠️  Got 403, waiting for Cloudflare challenge...');
+      await delay(5000);
+      
+      // Wait for Cloudflare challenge to complete
+      await page.waitForNavigation({ 
+        waitUntil: 'networkidle2', 
+        timeout: 30000 
+      }).catch(() => console.log('⚠️  Navigation timeout, continuing...'));
+      
+      console.log('📍 Current URL after challenge:', page.url());
+    }
+    
     console.log('✅ Page loaded');
     
-    console.log('⏳ Waiting 2000ms...');
-    await delay(2000);
+    console.log('⏳ Waiting 4000ms for page to stabilize...');
+    await delay(4000);
+    
+    await randomMouseMovement(page);
+    await delay(1000);
 
     console.log('\n=== STEP 5: CLICKING DOWNLOAD BUTTON ===');
     const buttonSelector = 'button.button.is-uppercase.is-success.is-fullwidth';
     console.log('Looking for button:', buttonSelector);
     
-    await page.waitForSelector(buttonSelector, { timeout: 15000 });
-    console.log('✅ Button found');
-    
-    await page.click(buttonSelector);
-    console.log('✅ Button clicked');
+    try {
+      await page.waitForSelector(buttonSelector, { timeout: 20000 });
+      console.log('✅ Button found');
+      
+      // Simulate human-like click
+      await randomMouseMovement(page);
+      await delay(500);
+      
+      await page.click(buttonSelector);
+      console.log('✅ Button clicked');
+    } catch (e) {
+      console.log('⚠️  Button not found, trying alternative methods...');
+      
+      // Try clicking by evaluating JavaScript
+      const clicked = await page.evaluate((sel) => {
+        const btn = document.querySelector(sel);
+        if (btn) {
+          btn.click();
+          return true;
+        }
+        return false;
+      }, buttonSelector);
+      
+      if (clicked) {
+        console.log('✅ Button clicked via JavaScript');
+      } else {
+        console.log('❌ Could not find button');
+      }
+    }
 
     // Check if redirected to /d/ after button click
-    console.log('⏳ Waiting 2000ms...');
-    await delay(2000);
+    console.log('⏳ Waiting 3000ms...');
+    await delay(3000);
     
     let currentUrl = page.url();
     console.log('📍 Current URL after button click:', currentUrl);
@@ -616,18 +882,35 @@ app.get('/resolvex', async (req, res) => {
       const fixedUrl = currentUrl.replace('/d/', '/f/');
       console.log('New URL:', fixedUrl);
       
-      const reloadResponse = await page.goto(fixedUrl, { waitUntil: 'networkidle2', timeout: 30000 });
-      console.log('📡 Reload Response Status:', reloadResponse.status());
-      
-      console.log('⏳ Waiting 2000ms...');
-      await delay(2000);
-      console.log('✅ Reloaded with /f/ URL');
+      try {
+        const reloadResponse = await page.goto(fixedUrl, { 
+          waitUntil: 'domcontentloaded',
+          timeout: 60000 
+        });
+        console.log('📡 Reload Response Status:', reloadResponse.status());
+        
+        if (reloadResponse.status() === 403) {
+          console.log('⚠️  Got 403 on reload, waiting for Cloudflare...');
+          await delay(5000);
+          
+          await page.waitForNavigation({ 
+            waitUntil: 'networkidle2', 
+            timeout: 30000 
+          }).catch(() => console.log('⚠️  Navigation timeout, continuing...'));
+        }
+        
+        console.log('⏳ Waiting 3000ms...');
+        await delay(3000);
+        console.log('✅ Reloaded with /f/ URL');
+      } catch (e) {
+        console.log('⚠️  Error reloading:', e.message);
+      }
     }
 
     // Step 6: Extended sniffing & retries
     console.log('\n=== STEP 6: MONITORING FOR MP4 URL ===');
     let waitTime = 0;
-    const maxWaitTime = 30000;
+    const maxWaitTime = 45000;
 
     while (!mp4UrlFound && waitTime < maxWaitTime) {
       await delay(1000);
@@ -642,7 +925,8 @@ app.get('/resolvex', async (req, res) => {
 
           if (currentUrl.endsWith('.mp4') && (
             currentUrl.includes('cdn') || currentUrl.includes('vault') || 
-            currentUrl.includes('eu') || currentUrl.includes('nextcdn')
+            currentUrl.includes('eu') || currentUrl.includes('nextcdn') ||
+            currentUrl.includes('bunny')
           )) {
             mp4Url = currentUrl;
             mp4UrlFound = true;
@@ -658,7 +942,8 @@ app.get('/resolvex', async (req, res) => {
             console.log(`📋 Found ${mp4Match.length} potential MP4 URL(s) in content`);
             const found = mp4Match.find(match =>
               match.includes('cdn') || match.includes('vault') ||
-              match.includes('eu') || match.includes('nextcdn')
+              match.includes('eu') || match.includes('nextcdn') ||
+              match.includes('bunny')
             );
             if (found) {
               mp4Url = found;
@@ -667,6 +952,20 @@ app.get('/resolvex', async (req, res) => {
               break;
             }
           }
+          
+          // Additional method: check for video elements
+          const videoSrc = await page.evaluate(() => {
+            const video = document.querySelector('video');
+            return video ? video.src : null;
+          });
+          
+          if (videoSrc && videoSrc.endsWith('.mp4')) {
+            mp4Url = videoSrc;
+            mp4UrlFound = true;
+            console.log('🎥 MP4 URL FOUND from video element:', videoSrc);
+            break;
+          }
+          
         } catch (err) {
           console.log('⚠️  Error during periodic check:', err.message);
         }
@@ -675,6 +974,11 @@ app.get('/resolvex', async (req, res) => {
 
     if (!mp4UrlFound || !mp4Url) {
       console.log('❌ FAILED: No valid MP4 URL found after monitoring');
+      
+      // Last attempt: take screenshot for debugging
+      const screenshot = await page.screenshot({ encoding: 'base64' });
+      console.log('📸 Screenshot taken (base64 length):', screenshot.length);
+      
       throw new Error('Failed to find a valid MP4 URL');
     }
 
@@ -710,7 +1014,6 @@ app.get('/resolvex', async (req, res) => {
     return res.status(500).json({ error: err.message });
   }
 });
-
 app.get('/getDownload', async (req, res) => {
     const { moviename, episode } = req.query;
     if (!moviename) {
